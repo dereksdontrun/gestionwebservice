@@ -426,7 +426,22 @@ function muestraListaPedidos(pedidos) {
     //por cada pedido, generamos un tr que hacemos appenchild a tbody
     pedidos.forEach(
         pedido => {
-            num_pedidos++;                          
+            num_pedidos++;        
+            
+            //color a poner, verde si está enviado, rojo si no válido, naranja el resto
+            if (pedido.color == 1) {
+                //enviado 
+                var color_pedido = 'enviado';
+            } else if (pedido.color == 2) {
+                //recibido, en pago aceptado a distancia
+                var color_pedido = 'recibido';
+            } else if (pedido.color == 3) {                
+                //en procesos 
+                var color_pedido = 'en_proceso';
+            } else {
+                //error o cancelado
+                var color_pedido = 'no_valido';
+            }
 
             var tr_pedido = document.createElement('tr');
             tr_pedido.id = 'tr_'+pedido.id_webservice_order;
@@ -446,8 +461,8 @@ function muestraListaPedidos(pedidos) {
                 <td class="fixed-width-xl center">
                     ${pedido.user} 
                 </td>
-                <td class="fixed-width-xl center">
-                    ${pedido.estado}                       
+                <td class="fixed-width-xl center ${color_pedido}">
+                    ${pedido.estado}                                        
                 </td>                
                 <td class="fixed-width-sm center">
                     ${pedido.date_add} 
@@ -571,7 +586,7 @@ function mostrarPedido(e) {
     }
 }
 
-//función para mostrar los datos de pedido. Arriba pondremos un alert info con la dirección de entrega junto a otro con los datos generales del pedido, en rojo si el pedido no tiene valid 1, en warning si está sin enviar, en verde si está enviado. Debajo la lista de productos que contiene.
+//función para mostrar los datos de pedido. Arriba pondremos un alert-secondary con la dirección de entrega junto a otro con los datos generales del pedido, en danger si el pedido no tiene valid 1, en warning si está sin enviar en proceso, en success si está en pago a distancia aceptado y en azul primary si está enviado. Debajo la lista de productos que contiene.
 function muestraPedido(info) {
     // console.log('muestraPedido');    
 
@@ -580,138 +595,88 @@ function muestraPedido(info) {
     div_pedido.id = 'div_pedido';
     document.querySelector('div#div_pedidos').appendChild(div_pedido);
 
-    if (info.webservice.enviado == 1) {
+    //color a poner, verde si está enviado, rojo si no válido, naranja el resto
+    if (info.webservice.color == 1) {
         //enviado 
+        var badge = 'info';
+    } else if (info.webservice.color == 2) {
+        //recibido, en pago aceptado a distancia
         var badge = 'success';
-    } else if (info.webservice.enviado == 0 || info.webservice.valid == 1) {
+    } else if (info.webservice.color == 3) {                
         //en procesos 
         var badge = 'warning';
     } else {
         //error o cancelado
         var badge = 'danger';
-    }
+    }    
 
     var info_general = `
-        <div class="col-lg-6"> 
-        <div class="alert alert-${badge} clearfix">         
-            <div class="col-lg-2">                
-            <b>Mensaje API / Estado:</b><br> 
-                <span title="API result: ${info.dropshipping.response_result}">
-                ${pedido_response_msg} / ${info.dropshipping.status_name}
-                </span> 
+        <div class="col-lg-8"> 
+        <div class="alert alert-${badge} clearfix">
+            <b>INFORMACIÓN</b><br>         
+            <em>Origen pedido:</em> ${info.webservice.user}<br>
+            <em>Id pedido Webservice:</em> ${info.webservice.id_webservice_order}<br>
+            <em>Id pedido Origen:</em> ${info.webservice.external_id_order}<br>
+            <em>Fecha pedido origen:</em> ${info.webservice.order_date}<br>  
+            <em>Fecha pedido aceptado:</em> ${info.webservice.date_add}<br>   
+            <em>Estado:</em> ${info.webservice.estado}<br>`;  
+
+    //si está enviado se ponen los datos de envío
+    if (info.webservice.shipping !== 0) {
+        if (typeof info.webservice.shipping === "object") { //si no viene un objeto con la ingo y no era 0  es que no se obtuvo la info
+            info_general += `
+                <b>Envío:</b> <br>
+                <div class="info_envio"> 
+                <em>Fecha:</em> ${info.webservice.shipping.fecha_enviado}<br>
+                <em>Transporte:</em> ${info.webservice.shipping.carrier}<br>
+                <em>Tracking:</em> ${info.webservice.shipping.tracking}<br>
+                <em>Seguimiento:</em><br> ${info.webservice.shipping.url}<br>       
+                </div>            
+            `;
+        } else {
+            //hubo error y llega mensaje
+            info_general += `
+                <b>Envío:</b> <br>
+                <div class="info_envio"> 
+                    Error obteniendo datos de transporte<br>
+                </div>
+            `;
+        }
+    }
+            
+    info_general += `
             </div>
-            <div class="col-lg-2">                
-            <b>Ref. Disfrazzes / ID:</b><br> ${info.dropshipping.disfrazzes_reference} / ${info.dropshipping.disfrazzes_id}
-            </div> 
-            <div class="col-lg-1">                
-            <b>Entrega:</b><br> ${info.dropshipping.response_delivery_date}  
-            </div>
-            <div class="col-lg-1">                
-            <b>Expedición:</b><br> <span title="${info.dropshipping.date_expedicion}">
-                                        ${pedido_date_expedicion}
-                                    </span>
-            </div>
-            <div class="col-lg-6">                
-            <b>Seguimiento:</b> ${pedido_tracking}
-            </div>          
-        </div>
         </div>
         `;
+    
 
     var info_address = `
-        <div class="col-lg-6"> 
-        <div class="alert alert-info clearfix">
-            <b>Destinatario:</b><br> 
-            ${info.webservice.firstname} ${info.webservice.lastname}<br>
-            <b>Ref. Disfrazzes / ID:</b><br> ${info.dropshipping.disfrazzes_reference} / ${info.dropshipping.disfrazzes_id}
-            </div> 
-            <div class="col-lg-1">                
-            <b>Entrega:</b><br> ${info.dropshipping.response_delivery_date}  
-            </div>
-            <div class="col-lg-1">                
-            <b>Expedición:</b><br> <span title="${info.dropshipping.date_expedicion}">
-                                        ${pedido_date_expedicion}
-                                    </span>
-            </div>
-            <div class="col-lg-6">                
-            <b>Seguimiento:</b> ${pedido_tracking}
-            </div>          
-        </div>
-        </div>
-    `;
+        <div class="col-lg-4"> 
+        <div class="alert alert-secondary clearfix color_secondary">
+            <b>DIRECCIÓN ENTREGA</b><br>
+            ${info.webservice.firstname} ${info.webservice.lastname}<br>`;
 
-
-
-
-
-
-    var pedido_response_msg = info.dropshipping.response_msg;
-    if (pedido_response_msg == '') {
-        pedido_response_msg = 'Pedido sin solicitar / error en petición';
+    if (info.webservice.company != '') {
+        info_address += `        
+        ${info.webservice.company}<br>`;
     }
 
-    var pedido_date_expedicion = info.dropshipping.date_expedicion;
-    if (pedido_date_expedicion == '0000-00-00') {
-        pedido_date_expedicion = 'Pendiente';
+    info_address += `  
+        ${info.webservice.address1}<br>`;
+
+    if (info.webservice.address2 != '') {
+        info_address += `  
+        ${info.webservice.address2}<br>`;
     }
 
-    var pedido_tracking = info.dropshipping.tracking;
-    if (pedido_tracking == '') {
-        pedido_tracking = 'Pendiente de envío';
-    } else {
-        pedido_tracking = pedido_tracking+'<br>'+info.dropshipping.url_tracking;        
-    }
-
-    if (info.dropshipping.response_result != 1) {
-        var mensaje_api = `
-        <div class="col-lg-9">
-        <div class="alert alert-danger clearfix">          
-            <div class="col-lg-10">                
-            <b>Mensaje API:</b><br> <span title="API result: ${info.dropshipping.response_result}">${pedido_response_msg}</span>  
-            </div>                       
+    info_address += `    
+        ${info.webservice.phone_mobile} ${info.webservice.phone}<br>
+        ${info.webservice.postcode} ${info.webservice.city}<br>
+        ${info.webservice.provincia}<br>
+        ${info.webservice.country}<br>
         </div>
         </div>
         `;
-    } else {
-        //el pedido ha entrado pero si su status_id es 0 aún no se ha solictado estado, si es 10 ha sido anulado, si es 4 está enviado, y el resto cuentan como pendiente o procesando
-        if (info.dropshipping.status_id == 10 || info.dropshipping.error == 1) {
-            //anulado 
-            var badge = 'danger';
-        } else if (info.dropshipping.status_id == 4) {
-            //enviado 
-            var badge = 'success';
-        } else {
-            //pendiente
-            var badge = 'warning';
-        }
-
-        var mensaje_api = `
-        <div class="col-lg-12"> 
-        <div class="alert alert-${badge} clearfix">         
-            <div class="col-lg-2">                
-            <b>Mensaje API / Estado:</b><br> 
-                <span title="API result: ${info.dropshipping.response_result}">
-                ${pedido_response_msg} / ${info.dropshipping.status_name}
-                </span> 
-            </div>
-            <div class="col-lg-2">                
-            <b>Ref. Disfrazzes / ID:</b><br> ${info.dropshipping.disfrazzes_reference} / ${info.dropshipping.disfrazzes_id}
-            </div> 
-            <div class="col-lg-1">                
-            <b>Entrega:</b><br> ${info.dropshipping.response_delivery_date}  
-            </div>
-            <div class="col-lg-1">                
-            <b>Expedición:</b><br> <span title="${info.dropshipping.date_expedicion}">
-                                        ${pedido_date_expedicion}
-                                    </span>
-            </div>
-            <div class="col-lg-6">                
-            <b>Seguimiento:</b> ${pedido_tracking}
-            </div>          
-        </div>
-        </div>
-        `;
-    }
 
     //sacamos los productos, si han llegado
     if (info.productos) {
@@ -727,21 +692,17 @@ function muestraPedido(info) {
                 <small class="text-muted">Prestashop</small>
                 </th>
                 <th>
-                <span class="title_box">Referencia</span>
-                <small class="text-muted">Proveedor</small>
-                </th>
+                <span class="title_box text-center">Ean 13</span>                
+                </th>                
                 <th>
                 <span class="title_box">Cantidad<br>Solicitada</span>              
                 </th>
                 <th>
-                <span class="title_box">Cantidad<br>Aceptada</span>              
+                <span class="title_box text-center">Descuento<br>%</span>              
                 </th>
                 <th>
-                <span class="title_box">API Code</span>              
-                </th>
-                <th>
-                <span class="title_box">Mensaje API</span>              
-                </th>		
+                <span class="title_box text-center">Precio<br><small class="text-muted">descuento</small></span>                              
+                </th>                		
                 <th></th>
             </tr>
             </thead>
@@ -749,22 +710,16 @@ function muestraPedido(info) {
         `;
 
         info.productos.forEach(
-            producto => {
-                if (producto.variant_msg == '') {
-                    var variant_msg = 'Sin info';
-                } else {
-                    var variant_msg = producto.variant_msg;
-                }
+            producto => {                
                 var prod = `
                 <tr>
-                <td><img src="https://${producto.image_path}" alt="" class="imgm img-thumbnail" height="49px" width="45px"></td>
+                <td><img src="https://${producto.image_path}" alt="" title="${producto.id_product}_${producto.id_product_attribute}" class="imgm img-thumbnail" height="49px" width="45px"></td>
                 <td>${producto.product_name}</td>
-                <td>${producto.product_reference}</td>
-                <td>${producto.product_supplier_reference}</td>
+                <td>${producto.referencia}</td>
+                <td>${producto.ean13}</td>
                 <td class="text-center">${producto.product_quantity}</td>
-                <td class="text-center">${producto.variant_quantity_accepted}</td>
-                <td class="text-center">${producto.variant_result}</td>
-                <td>${variant_msg}</td>                
+                <td class="text-center">${producto.discount}</td>
+                <td class="text-center">${producto.discount_price}</td>                                
                 </tr>
                 `;
 
@@ -788,9 +743,10 @@ function muestraPedido(info) {
 
     div_pedido.innerHTML = `
         <div class="panel">                        
-            <h3>Disfrazzes - ${info.dropshipping.id_order} - ${info.dropshipping.estado_prestashop}</h3> 
+            <h3>Origen: ${info.webservice.user} - Id: ${info.webservice.id_order} - ${info.webservice.estado}</h3> 
             <div class="row">
-                ${mensaje_api}        
+                ${info_general}
+                ${info_address}        
             </div>
             <div class="row">
                 ${productos}         

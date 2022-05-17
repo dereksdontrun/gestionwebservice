@@ -202,7 +202,13 @@ class AdminWebserviceOrdersController extends ModuleAdminController {
         wor.date_add AS date_add, wor.error AS error,
         CONCAT( "'.$url_order_back.'", wor.id_order) AS url_pedido, 
         ord.current_state AS id_estado,
-        IFNULL(osl.name, "Error en pedido") AS estado
+        IFNULL(osl.name, "Error en pedido") AS estado,
+        CASE        
+        WHEN ord.valid IS NULL OR ord.valid = 0 THEN 0
+        WHEN ord.current_state = 4 THEN 1
+        WHEN ord.current_state = 12 THEN 2
+        ELSE 3
+        END AS color
         FROM lafrips_webservice_orders wor
         LEFT JOIN lafrips_orders ord ON ord.id_order = wor.id_order
         LEFT JOIN lafrips_order_state_lang osl ON osl.id_order_state = ord.current_state AND osl.id_lang = 1
@@ -238,17 +244,24 @@ class AdminWebserviceOrdersController extends ModuleAdminController {
         //obtenemos los datos del pedido, la dirección de entrega y productos que contiene
         $info_pedido = array();
 
-        //primero los datos de una posible respuesta de la API
+        //primero los datos generales de pedido y dirección
         $sql_info_pedido_webservice = 'SELECT wor.id_webservice_order AS id_webservice_order, wor.user_name AS user, wor.id_order AS id_order,
         wor.external_id_order AS external_id_order,
         IF(wor.carrier_name = "", "No asignado", wor.carrier_name) AS carrier,
-        wor.order_date AS order_date, wor.date_add AS date_add, ord.current_state AS id_estado, ord.valid AS valido,
+        DATE_FORMAT(wor.order_date,"%d-%m-%Y %H:%i:%s") AS order_date, DATE_FORMAT(wor.date_add,"%d-%m-%Y %H:%i:%s") AS date_add, ord.current_state AS id_estado, 
         IFNULL(osl.name, "Error en pedido") AS estado,
+        CASE        
+        WHEN ord.valid IS NULL OR ord.valid = 0 THEN 0
+        WHEN ord.current_state = 4 THEN 1
+        WHEN ord.current_state = 12 THEN 2
+        ELSE 3
+        END AS color,
         adr.firstname AS firstname, adr.lastname AS lastname, adr.company AS company, adr.address1 AS address1, adr.address2 AS address2, adr.postcode AS postcode,
-        adr.city AS city, adr.phone AS phone, adr.phone_mobile AS phone_mobile, sta.name AS provincia, wor.error AS error
+        adr.city AS city, adr.phone AS phone, adr.phone_mobile AS phone_mobile, sta.name AS provincia, col.name AS country, wor.error AS error
         FROM lafrips_webservice_orders wor        
         LEFT JOIN lafrips_address adr ON adr.id_address = wor.id_address
         LEFT JOIN lafrips_state sta ON sta.id_state = adr.id_state
+        LEFT JOIN lafrips_country_lang col ON col.id_country = adr.id_country AND col.id_lang = 1
         LEFT JOIN lafrips_orders ord ON ord.id_order = wor.id_order
         LEFT JOIN lafrips_order_state_lang osl ON osl.id_order_state = ord.current_state AND osl.id_lang = 1
         WHERE wor.id_webservice_order = '.$id_webservice_order;
@@ -265,8 +278,7 @@ class AdminWebserviceOrdersController extends ModuleAdminController {
         $info_webservice['order_date'] = $info_pedido_webservice[0]['order_date'];
         $info_webservice['date_add'] = $info_pedido_webservice[0]['date_add'];
         $info_webservice['estado'] = $info_pedido_webservice[0]['estado'];
-        $info_webservice['enviado'] = $info_pedido_webservice[0]['id_estado'] == Configuration::get('PS_OS_SHIPPING') ? 1 : 0; //si el id de estado es enviado ponemos 1 a enviado
-        $info_webservice['valido'] = $info_pedido_webservice[0]['valido'];
+        $info_webservice['color'] = $info_pedido_webservice[0]['color'];         
         $info_webservice['firstname'] = $info_pedido_webservice[0]['firstname'];                
         $info_webservice['lastname'] = $info_pedido_webservice[0]['lastname'];
         $info_webservice['company'] = $info_pedido_webservice[0]['company'];
@@ -277,12 +289,42 @@ class AdminWebserviceOrdersController extends ModuleAdminController {
         $info_webservice['phone'] = $info_pedido_webservice[0]['phone'];
         $info_webservice['phone_mobile'] = $info_pedido_webservice[0]['phone_mobile'];
         $info_webservice['provincia'] = $info_pedido_webservice[0]['provincia'];
+        $info_webservice['country'] = $info_pedido_webservice[0]['country'];
         $info_webservice['error'] = $info_pedido_webservice[0]['error'];        
+
+        //si el pedido está enviado, obtenemos los datos de envío, tracking, hora, etc
+        if ($info_pedido_webservice[0]['id_estado'] == Configuration::get('PS_OS_SHIPPING')) {           
+            //pedido enviado, comprobamos el transportista y conseguimos su nombre, la fecha de cambio de estado a enviado, el número de tracking y la url de seguimiento. En principio los trasnportistas son GLS 24 o MRW pero por si se hace un cambio manual por la razón que sea, admitimos Correos y DHL (Spring¿?), que existen a 09/05/2022 
+            $order = new Order($info_pedido_webservice[0]['id_order']);
+            if (!$info_shipping = $this->getShippinginfo($order)) {
+                $info_webservice['shipping'] = 'Error obteniendo datos de transporte';
+
+            } else {
+                //sacamos la hora de cambio de estado a enviado
+                $id_order = $info_pedido_webservice[0]['id_order'];
+                $sql_date_envio = 'SELECT DATE_FORMAT(date_add,"%d-%m-%Y %H:%i:%s")
+                    FROM lafrips_order_history 
+                    WHERE id_order = '.$id_order.' 
+                    AND id_order_state = '.(int)Configuration::get('PS_OS_SHIPPING').'
+                    ORDER BY id_order_history DESC';
+                
+                if (!$date_envio = Db::getInstance()->getValue($sql_date_envio)) {
+                    $date_envio = 'Error en fecha de envío';                    
+                }
+
+                $info_webservice['shipping']['fecha_enviado'] = $date_envio;
+                $info_webservice['shipping']['carrier'] = $info_shipping['carrier_name'];
+                $info_webservice['shipping']['tracking'] = $info_shipping['tracking_number'];
+                $info_webservice['shipping']['url'] = $info_shipping['url_tracking'];
+            }                
+        } else {
+            $info_webservice['shipping'] = 0;
+        }
 
         $info_pedido['webservice'] = $info_webservice;
 
         //ahora los datos de productos
-        $sql_info_productos = 'SELECT id_product, id_product_attribute, product_name, product_quantity, discount, discount_price
+        $sql_info_productos = 'SELECT id_product, id_product_attribute, product_name, product_quantity, discount, ROUND(discount_price, 2) AS discount_price
         FROM lafrips_webservice_order_detail
         WHERE id_webservice_order = '.$id_webservice_order;
 
@@ -334,6 +376,132 @@ class AdminWebserviceOrdersController extends ModuleAdminController {
         $product_attribute = new Combination($id_product_attribute);
 
         return array($product_attribute->ean13, $product_attribute ->reference);
+    }
+
+    //función mia del webservice que devuelve el nombre de transporte, tracking, url seguimiento de un pedido
+    //En principio los trasnportistas son GLS 24 o MRW pero por si se hace un cambio manual por la razón que sea, admitimos Correos y DHL (Spring¿?), que existen a 09/05/2022 
+    public function getShippinginfo($order) {
+        //recibimos el objeto instanciado $order
+        $id_order = $order->id;
+        $id_carrier = $order->id_carrier;
+
+        $carrier = new Carrier($id_carrier);
+        $carrier_module = $carrier->external_module_name; 
+        $carrier_name = $carrier->name;        
+
+        if ($carrier_module == 'glsshipping') {
+            //obtenemos el tracking desde order_carrier
+            $sql_tracking_number = Db::getInstance()->ExecuteS('SELECT oca.tracking_number AS tracking_number
+                FROM lafrips_order_carrier oca
+                JOIN lafrips_carrier car ON oca.id_carrier = car.id_carrier AND car.external_module_name = "glsshipping"
+                WHERE oca.id_order = '.$id_order);
+            $tracking_number = $sql_tracking_number[0]['tracking_number'];
+            if (!$tracking_number || $tracking_number == '') {
+                //si no conseguimos tracking_number devolvemos error
+                return false;
+                
+            }
+
+            //sacamos url_tracking de la tabla de gls, si no la construimos con ayuda de la dirección de entrega y el tracking number
+            $url_track = Db::getInstance()->getValue('SELECT url_track FROM lafrips_gls_envios WHERE id_envio_order = '.$id_order.' ORDER BY id_envio DESC');
+            
+            if (!$url_track || $url_track == '') {
+                //si no hay url_track en gls_envios montamos la url con el tracking en order_carrier y el CP en la dirección                              
+                $id_address = $order->id_address_delivery;
+                $address = new Address($id_address);
+                $cp = $address->postcode;
+                if ($cp) {
+                    $url_track = 'https://m.gls-spain.es/e/'.$tracking_number.'/'.$cp;
+                } else {
+                    //si no conseguimos cp devolvemos error
+                    return false;
+                }  
+
+            }//si no hay url_track en gls_envios 
+            
+        } else if (($carrier_module == 'mrwcarrier') || (preg_match('/mrw/i', $carrier_name))) { // si es módulo mrw o tiene mrw en el nombre de transportista
+            //sacamos tracking de la tabla order_carrier                
+            $sql_tracking_number = Db::getInstance()->ExecuteS('SELECT oca.tracking_number AS tracking_number
+                FROM lafrips_order_carrier oca
+                JOIN lafrips_carrier car ON oca.id_carrier = car.id_carrier AND car.external_module_name = "mrwcarrier"
+                WHERE oca.id_order = '.$id_order);
+            $tracking_number = $sql_tracking_number[0]['tracking_number'];
+            
+            if (!$tracking_number || $tracking_number == '') {
+                //si no conseguimos tracking_number devolvemos error
+                return false;
+                
+            } else {                
+                //construimos la url de seguimiento
+                $url_track = 'http://www.mrw.es/seguimiento_envios/MRW_resultados_consultas.asp?modo=nacional&envio='.$tracking_number;
+                
+            }             
+        } else if ($carrier_module == 'dhlexpress') {
+            //sacamos tracking de la tabla order_carrier                
+            $sql_tracking_number = Db::getInstance()->ExecuteS('SELECT oca.tracking_number AS tracking_number
+                FROM lafrips_order_carrier oca
+                JOIN lafrips_carrier car ON oca.id_carrier = car.id_carrier AND car.external_module_name = "dhlexpress"
+                WHERE oca.id_order = '.$id_order);
+            $tracking_number = $sql_tracking_number[0]['tracking_number'];
+            
+            if (!$tracking_number || $tracking_number == '') {
+                //si no conseguimos tracking_number devolvemos error
+                return false;
+               
+            } else {                
+                //construimos la url de seguimiento
+                $url_track = 'https://mydhl.express.dhl/fr/fr/tracking.html#/results?id='.$tracking_number;
+                
+            }             
+            
+        } else if ($carrier_module == 'correos') {
+            //sacamos tracking de la tabla order_carrier                
+            $sql_tracking_number = Db::getInstance()->ExecuteS('SELECT oca.tracking_number AS tracking_number
+                FROM lafrips_order_carrier oca
+                JOIN lafrips_carrier car ON oca.id_carrier = car.id_carrier AND car.external_module_name = "correos"
+                WHERE oca.id_order = '.$id_order);
+            $tracking_number = $sql_tracking_number[0]['tracking_number'];
+            
+            if (!$tracking_number || $tracking_number == '') {
+                //si no conseguimos tracking_number devolvemos error
+                return false;
+               
+            } else {                
+                //construimos la url de seguimiento
+                $url_track = 'http://www.correos.es/comun/localizador/track.asp?numero='.$tracking_number;
+                
+            }             
+            
+            //Spring no guarda el nombre del módulo en lafrips_carrier
+        } else if (preg_match('/spring/i', $carrier_name)) {
+            //sacamos tracking de la tabla order_carrier                
+            $sql_tracking_number = Db::getInstance()->ExecuteS('SELECT oca.tracking_number AS tracking_number
+                FROM lafrips_order_carrier oca
+                JOIN lafrips_carrier car ON oca.id_carrier = car.id_carrier 
+                WHERE oca.id_order = '.$id_order);
+            $tracking_number = $sql_tracking_number[0]['tracking_number'];
+            
+            if (!$tracking_number || $tracking_number == '') {
+                //si no conseguimos tracking_number devolvemos error
+                return false;
+               
+            } else {                
+                //construimos la url de seguimiento
+                $url_track = 'https://mailingtechnology.com/tracking/?tn='.$tracking_number;
+                
+            }             
+            
+        } else {
+            //el módulo de transporte no es correcto
+            return false;
+        } 
+        
+        return array(
+            "carrier_name" => $carrier_name, 
+            "tracking_number" => $tracking_number,
+            "url_tracking" => $url_track
+        );
+
     }
 
 }

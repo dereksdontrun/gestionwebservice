@@ -46,6 +46,43 @@
     /* border-top: 3px solid black; */
 }
 
+
+/* Colores estado de pedido */
+.enviado {  
+  background-color: #8389E0 !important;
+  color: white !important;
+  border-radius: 10px;
+}
+
+.recibido {  
+  background-color: #6BD089 !important; 
+  color: white !important;
+  border-radius: 10px;
+}
+
+.en_proceso {  
+  background-color: #FBBB22 !important; 
+  color: white !important;
+  border-radius: 10px;
+}
+
+.no_valido {  
+  background-color: #E08F95 !important;
+  color: white !important;
+  border-radius: 10px;
+}
+
+.color_secondary { /* no funcionan los alert primary, secondary, etc de bootstrap, ponemos el color a mano para el div */
+  background-color: #E2E3E5 !important;
+  color: #4F5E80 !important;
+}
+
+/* div de info envío */
+.info_envio {
+  margin-left: 20px;
+}
+
+
 /* Botón scroll para volver arriba */
 
 #boton_scroll {
